@@ -1,0 +1,24 @@
+{
+  "accountId": 33782295,
+  "displayName": "Hikaru",
+  "gameName": "Hikaru",
+  "internalName": "Hikaru",
+  "nameChangeFlag": false,
+  "percentCompleteForNextLevel": 36,
+  "privacy": "PUBLIC",
+  "profileIconId": 1627,
+  "puuid": "34280ab9-254e-55a0-98ff-d6b124b72f3c",
+  "rerollPoints": {
+    "currentPoints": 306,
+    "maxRolls": 2,
+    "numberOfRolls": 1,
+    "pointsCostToRoll": 250,
+    "pointsToReroll": 194
+  },
+  "summonerId": 21639273,
+  "summonerLevel": 174,
+  "tagLine": "NA1",
+  "unnamed": false,
+  "xpSinceLastLevel": 1348,
+  "xpUntilNextLevel": 3648
+}

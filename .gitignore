@@ -1,0 +1,10 @@
+node_modules
+*.tar.gz
+*.mp4
+
+[bB]uild/
+.vscode/
+*.db
+*.db-*
+media/
+settings.json
