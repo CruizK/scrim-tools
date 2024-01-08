@@ -15,34 +15,40 @@ import crypto from 'crypto'
 import { IOBSDevice, TAudioSourceType } from './types'
 import WaitQueue from 'wait-queue'
 import { getPromiseBomb } from '../utils'
-import settings from '../settings'
 import dayjs from 'dayjs'
+import { CaptureType, GameCaptureSettings } from '../../shared/types'
+import Manager from '../manager'
+import SettingsHandler from '../settings'
 
 export default class Recorder {
-  width = 1920
-  height = 1080
-  scaleInterval?: NodeJS.Timeout
-  window: BrowserWindow
-  previewName = 'preview'
-  scene!: osn.IScene
-  capture!: osn.IInput
-  captureSceneItem!: osn.ISceneItem
-  recordingFactory!: osn.IAdvancedRecording
-  defaultVideoContext!: osn.IVideo
-  currentScaleFactor!: osn.IVec2
-  startQueue: WaitQueue<osn.EOutputSignal> = new WaitQueue()
-  wroteQueue: WaitQueue<osn.EOutputSignal> = new WaitQueue()
+  private width = 1920
+  private height = 1080
+  private scaleInterval?: NodeJS.Timeout
+  private window: BrowserWindow
+  private previewName = 'preview'
+
+  private startQueue: WaitQueue<osn.EOutputSignal> = new WaitQueue()
+  private wroteQueue: WaitQueue<osn.EOutputSignal> = new WaitQueue()
+
+  private scene!: osn.IScene
+  private capture!: osn.IInput
+  private audioOutput!: osn.IInput
+  private audioInput!: osn.IInput
+  private captureSceneItem!: osn.ISceneItem
+  private recordingFactory!: osn.IAdvancedRecording
+
+  private currentScaleFactor!: osn.IVec2
   startDate!: Date
   endDate!: Date
 
-  constructor(window: BrowserWindow) {
+  constructor(manager: Manager) {
     this.width = 1920
     this.height = 1080
-    this.window = window
-    this.currentScaleFactor = settings.settings.videoScaleFactor
+    this.window = manager.window
+    this.init()
   }
 
-  init() {
+  private init() {
     const UNIQUE_ID = crypto.randomUUID()
     console.info(`[Recorder] Initializing OBS (${UNIQUE_ID})`)
     osn.NodeObs.IPC.host(UNIQUE_ID)
@@ -69,29 +75,42 @@ export default class Recorder {
     console.info('[Recorder] OBS initialized successfully')
   }
 
-  setupLeagueGameCapture() {
-    this.capture = osn.InputFactory.create('game_capture', 'League Of Legends')
-    const { settings } = this.capture
-    settings.capture_mode = 'window'
-    settings.allow_transparency = true
-    settings.priority = 1
-    settings.capture_cursor = true
-    settings.hook_rate = 3
-    settings.window = 'League of Legends (TM) Client:RiotWindowClass:League of Legends.exe'
+  configureCapture(type: CaptureType, captureSettings: GameCaptureSettings, settings: SettingsHandler) {
+    if (type == CaptureType.game) {
+      this.capture = osn.InputFactory.create("game_capture", "Current Capture")
+      const { settings } = this.capture
+      settings.capture_mode = "window"
+      settings.priority = 1
+      settings.capture_cursor = captureSettings.capture_cursor
+      settings.hook_rate = 3
+      settings.window = captureSettings.window
+      this.capture.update(settings)
+      this.capture.save()
+    }
+    else if (type == CaptureType.monitor) {
+      this.capture = osn.InputFactory.create('monitor_capture', 'Current Capture')
 
-    this.capture.update(settings)
-    this.capture.save()
+      const settings = this.capture.settings
+      settings['monitor'] = 0
+      settings['capture_curser'] = captureSettings.capture_cursor
+
+      this.capture.update(settings)
+      this.capture.save()
+    }
 
     this.captureSceneItem = this.scene.add(this.capture)
-    if (this.currentScaleFactor)
+
+    if (settings.settings.captureScaleFactor) {
+      this.currentScaleFactor = settings.settings.captureScaleFactor
       this.captureSceneItem.scale = this.currentScaleFactor
+    }
 
     if (this.scaleInterval) clearInterval(this.scaleInterval)
-    this.scaleInterval = setInterval(() => this.scaleVideo(), 2000)
+    this.scaleInterval = setInterval(() => this.scaleVideo(settings), 2000)
   }
 
-  private scaleVideo() {
-    if (this.capture.width == 0 || this.capture.height == 0) return;
+  private scaleVideo(settings: SettingsHandler) {
+    if (this.capture.width == 0 || this.capture.height == 0 || !this.captureSceneItem) return;
     const xScaleFactor = Math.round((this.width / this.capture.width) * 100) / 100
     const yScaleFactor = Math.round((this.height / this.capture.height) * 100) / 100
 
@@ -103,28 +122,29 @@ export default class Recorder {
       console.log('Scale Factor', xScaleFactor, yScaleFactor)
       this.currentScaleFactor = { x: xScaleFactor, y: yScaleFactor }
       this.captureSceneItem.scale = this.currentScaleFactor
-      settings.set({ videoScaleFactor: this.currentScaleFactor })
+      settings.set({ captureScaleFactor: this.currentScaleFactor })
     }
   }
 
-  setupMonitorCapture() {
-    this.capture = osn.InputFactory.create('monitor_capture', 'Test Cap')
+  getOutputAudioDevices(): IOBSDevice[] {
+    console.log(osn.NodeObs.OBS_settings_getVideoDevices())
+    console.log(osn.NodeObs.OBS_settings_getSettings())
+    return osn.NodeObs.OBS_settings_getOutputAudioDevices() as IOBSDevice[]
+  }
 
-    const settings = this.capture.settings
-    settings['monitor'] = 0
-    settings['capture_curser'] = true
+  getInputAudioDevices(): IOBSDevice[] {
+    return osn.NodeObs.OBS_settings_getInputAudioDevices() as IOBSDevice[]
+  }
 
-    this.capture.update(settings)
-    this.capture.save()
-
-    this.scene.add(this.capture)
+  getVideoEncoders(): string[] {
+    return osn.VideoEncoderFactory.types()
   }
 
   setupAudio() {
     const track1 = osn.AudioTrackFactory.create(160, 'track1')
     osn.AudioTrackFactory.setAtIndex(track1, 1)
 
-    const outputDevices = osn.NodeObs.OBS_settings_getOutputAudioDevices() as IOBSDevice[]
+    const outputDevices = this.getOutputAudioDevices()
     const inputDevices = osn.NodeObs.OBS_settings_getInputAudioDevices() as IOBSDevice[]
 
     const realOutputDevices = outputDevices.filter((v) => v.id != 'default')
@@ -134,16 +154,16 @@ export default class Recorder {
     const inputDevice = realInputDevices[0]
 
     const outputType: TAudioSourceType = TAudioSourceType.output
-    const outputAudioSource = osn.InputFactory.create(outputType, 'desktop-audio', {
+    this.audioOutput = osn.InputFactory.create(outputType, 'desktop-audio', {
       device_id: outputDevice.id
     })
-    osn.Global.setOutputSource(2, outputAudioSource)
+    osn.Global.setOutputSource(2, this.audioOutput)
 
     const inputType = TAudioSourceType.input
-    const inputAudioSource = osn.InputFactory.create(inputType, 'mic-audio', {
+    this.audioInput = osn.InputFactory.create(inputType, 'mic-audio', {
       device_id: inputDevice.id
     })
-    osn.Global.setOutputSource(3, inputAudioSource)
+    osn.Global.setOutputSource(3, this.audioInput)
   }
 
   configureRecorder() {
@@ -152,13 +172,13 @@ export default class Recorder {
       fpsDen: 1,
       baseWidth: 1920,
       baseHeight: 1080,
-      outputWidth: 1280,
-      outputHeight: 720,
+      outputWidth: 1920,
+      outputHeight: 1080,
       outputFormat: EVideoFormat.NV12 as unknown as osn.EVideoFormat,
-      colorspace: EColorSpace.CSSRGB as unknown as osn.EColorSpace,
+      colorspace: EColorSpace.CS709 as unknown as osn.EColorSpace,
       scaleType: EScaleType.Bicubic as unknown as osn.EScaleType,
       fpsType: EFPSType.Fractional as unknown as osn.EFPSType,
-      range: ERangeType.Full as unknown as osn.ERangeType
+      range: ERangeType.Partial as unknown as osn.ERangeType
     }
 
     this.recordingFactory = osn.AdvancedRecordingFactory.create()
@@ -177,8 +197,9 @@ export default class Recorder {
     this.recordingFactory.videoEncoder.update({
       rate_control: "VBR",
       bitrate: 2500,
-      max_bitrate: 2500,
-      keyint_sec: 2
+      max_bitrate: 3500,
+      keyint_sec: 2,
+      psycho_aq: false
     })
 
     this.recordingFactory.signalHandler = (signal) => {
@@ -186,8 +207,11 @@ export default class Recorder {
     }
   }
 
+  lastFile() {
+    return this.recordingFactory.lastFile()
+  }
+
   async start() {
-    this.scaleVideo();
     const recordDate = dayjs()
     this.recordingFactory.fileFormat = recordDate.format("YYYY_M_D_H_m_s")
     this.recordingFactory.start()
@@ -272,8 +296,14 @@ export default class Recorder {
   }
 
   quit() {
-    this.capture.release()
-    this.scene.release()
+    if (this.audioInput)
+      this.audioInput.release()
+    if (this.audioOutput)
+      this.audioOutput.release()
+    if (this.capture)
+      this.capture.release()
+    if (this.scene)
+      this.scene.release()
     osn.NodeObs.IPC.disconnect()
   }
 }

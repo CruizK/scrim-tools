@@ -19,3 +19,14 @@ export function getLCUInfo(): Promise<LCUInfo> {
     })
   })
 }
+
+export function getActiveGameId(): Promise<number> {
+  return new Promise((res, rej) => {
+    wmic.get_value("process", "commandline", "name='League of Legends.exe'", (err, commandline: string) => {
+      if (err) return rej(err)
+      const args = commandline.replaceAll("\"", "").split(' ')
+      const gameId = args.find(x => x.startsWith("-GameID="))?.slice("-GameID=".length)
+      return res(Number(gameId))
+    })
+  })
+}

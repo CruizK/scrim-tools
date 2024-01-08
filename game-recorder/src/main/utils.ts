@@ -11,6 +11,11 @@ export const getPromiseWait = (wait: number) => {
   return new Promise((res, _rej) => setTimeout(res, wait))
 }
 
+export const getFileSizeMB = async (videoPath: string) => {
+  const fsStat = await fs.stat(videoPath);
+  return fsStat.size / (1024 * 1024)
+}
+
 export const generateThumbnail = async (videoPath: string): Promise<string> => {
   const filename = path.basename(videoPath).split('.')[0]
   const fileDir = path.dirname(videoPath)
@@ -27,12 +32,12 @@ export const generateThumbnail = async (videoPath: string): Promise<string> => {
   return output
 }
 
-export const trimStartingBlackFrames = async (videoPath: string): Promise<void> => {
+export const trimStartingBlackFrames = async (videoPath: string): Promise<number> => {
   if (!ffmpegPath) throw new Error("No ffmpeg")
   const args = [
     "-i", videoPath,
     "-vf", "blackdetect=d=0.05:pix_th=0.10",
-    "-t", "5",
+    "-t", "20",
     "-an",
     "-f", "null",
     "-"
@@ -42,10 +47,10 @@ export const trimStartingBlackFrames = async (videoPath: string): Promise<void> 
   const dir = path.dirname(videoPath)
   const tmpFile = `${dir}/tmp.mp4`
   await useFfmpeg(args, undefined, (data) => finalString += data)
-  console.log(finalString)
   const matches = finalString.matchAll(/black_start:0 black_end:(\d+\.\d+)/g)
+  let time = 0
   for (const match of matches) {
-    const time = Number(match[1])
+    time = Number(match[1])
     console.log(time)
     const trimArgs = [
       "-y",
@@ -55,10 +60,12 @@ export const trimStartingBlackFrames = async (videoPath: string): Promise<void> 
       "-copyts",
       tmpFile
     ]
-    await useFfmpeg(trimArgs, (d) => console.log(d), (d) => console.log(d))
+    await useFfmpeg(trimArgs)
     await fs.unlink(videoPath)
     await fs.rename(tmpFile, videoPath)
+    break;
   }
+  return time
 }
 
 

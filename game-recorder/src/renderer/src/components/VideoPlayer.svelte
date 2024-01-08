@@ -1,15 +1,17 @@
 <script lang="ts">
+  import type { Marker } from '../types'
   import VideoPlayerProgress from './VideoPlayerProgress.svelte'
+  export let markers: Marker[]
   export let path: string
+
   let time
   let duration
   let paused
-  let videoEl: HTMLMediaElement
 
   $: console.log(duration)
 
   const onSeek = (event) => {
-    videoEl.fastSeek(duration * event.detail)
+    time = duration * event.detail
   }
 
   const onKeyUp = (event: KeyboardEvent) => {
@@ -29,7 +31,6 @@
       autoplay
       muted
       controls
-      bind:this={videoEl}
       bind:currentTime={time}
       bind:duration
       bind:paused
@@ -37,5 +38,7 @@
     >
     </video>
   </div>
-  <VideoPlayerProgress on:seek={onSeek} {duration} {time} height={25} />
+  <div class="mt-10">
+    <VideoPlayerProgress on:seek={onSeek} {duration} {time} {markers} height={25} />
+  </div>
 </div>

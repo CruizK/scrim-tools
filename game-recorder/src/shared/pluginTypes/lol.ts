@@ -3,6 +3,9 @@ type EventData = {
 }
 
 export type LolGameData = {
-  kills: EventData[],
-  deaths: EventData[]
+  gameId: number;
+  diff: number;
+  duration: number;
+  kills: EventData[];
+  deaths: EventData[];
 }

@@ -4,30 +4,39 @@ import { GamePoller } from "./gamePoller";
 import { MainApi } from "../shared";
 import path from "path"
 import { buildApi, buildReqResApi } from "./api";
-import { generateThumbnail, trimStartingBlackFrames } from "./utils";
+import { generateThumbnail, getFileSizeMB, trimStartingBlackFrames } from "./utils";
 import db from "./db"
 import LolPlugin from "./plugins/lol/plugin";
-import { Game } from "../shared/types";
+import { CaptureType, Game, GameCaptureSettings } from "../shared/types";
 import games from "./gameDB";
 import { IPlugin } from "./types";
 import fs from "fs/promises"
+import { SettingSchema, getSettingSchema } from "../shared/settings";
+import SettingsHandler from "./settings";
 
 export default class Manager {
 
   MEDIA_DIR = path.join(__dirname, '../../', 'media')
   api: MainApi
   window: BrowserWindow
-  gamePoller: GamePoller
+  settings: SettingsHandler
   recorder: Recorder
-  plugins: Record<string, IPlugin<any>>
+
+  private gamePoller: GamePoller
+  private settingSchema: SettingSchema
+  private plugins: Record<string, IPlugin<any>>
 
   constructor(window: BrowserWindow) {
     this.window = window;
+    this.recorder = new Recorder(this);
     this.gamePoller = new GamePoller();
-    this.recorder = new Recorder(window);
     this.plugins = {
-      [games[0].name]: new LolPlugin(this.recorder)
+      [games[0].name]: new LolPlugin()
     }
+    this.settings = new SettingsHandler(this)
+    this.settingSchema = getSettingSchema(this)
+
+    this.initRecorder();
 
     // Have to use deprecated protocol since other does not work (well) for video streaming
     protocol.registerFileProtocol("recorder", (req, callback) => {
@@ -38,7 +47,6 @@ export default class Manager {
     const reqResApi = buildReqResApi(this)
     this.api = buildApi(reqResApi);
 
-    this.initRecorder();
     this.gamePoller.on("gameStarted", g => this.onGameStarted(g))
     this.gamePoller.on("gameClosed", g => this.onGameClosed(g))
     this.init()
@@ -47,10 +55,6 @@ export default class Manager {
   async init() {
     try {
       await db.syncFromDisk(this.MEDIA_DIR)
-      const files = await fs.readdir(this.MEDIA_DIR);
-      for (const file of files) {
-        await generateThumbnail(path.join(this.MEDIA_DIR, file))
-      }
     } catch (e) {
       console.log(e)
     }
@@ -64,26 +68,38 @@ export default class Manager {
   }
 
   private async onGameClosed(game: Game) {
-    const videoPath = await this.recorder.stop();
-    await trimStartingBlackFrames(videoPath);
-    const thumbnailPath = await generateThumbnail(videoPath)
+    // This video has improper slashes for windows
+    const videoIncorrectPath = await this.recorder.stop();
+    const videoPath = path.join(this.MEDIA_DIR, path.basename(videoIncorrectPath))
+    this.api.recorderIsRecording(this.window, false)
+
     const plugin = this.plugins[game.name]
-    //const gameData = await plugin.onGameClosed()
-    const gameData = {}
+    let gameData = {}
+    try {
+      gameData = await plugin.onGameClosed(videoPath)
+    } catch (e) {
+      console.info("Failed to get game data", gameData)
+    }
+    if (plugin.shouldWriteGameData) {
+      const name = `${path.parse(videoPath).name}.meta`
+      await fs.writeFile(path.join(this.MEDIA_DIR, name), JSON.stringify(gameData))
+    }
+    const thumbnailPath = await generateThumbnail(videoPath)
     db.insertVideo({
-      name: "",
-      tags: [],
       videoPath,
       thumbnailPath,
       game: game.name,
+      fileSize: await getFileSizeMB(videoPath),
       gameData
     })
-    this.api.recorderIsRecording(this.window, false)
   }
 
   initRecorder() {
-    this.recorder.init()
-    this.recorder.setupLeagueGameCapture()
+    const captureSettings: GameCaptureSettings = {
+      capture_cursor: true,
+      window: 'League of Legends (TM) Client:RiotWindowClass:League of Legends.exe'
+    }
+    this.recorder.configureCapture(CaptureType.game, captureSettings, this.settings)
     this.recorder.setupAudio()
     this.recorder.configureRecorder()
   }

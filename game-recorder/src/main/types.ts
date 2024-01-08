@@ -1,5 +1,6 @@
 
 export interface IPlugin<T> {
+  shouldWriteGameData: boolean
   onGameStart: () => Promise<void>
-  onGameClosed: () => Promise<T>
+  onGameClosed: (videoPath: string) => Promise<T>
 }

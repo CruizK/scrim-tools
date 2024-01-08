@@ -1,36 +1,34 @@
-import { IVec2 } from "obs-studio-node"
 import fs from "fs"
 import path from "path"
-
-type Settings = {
-  videoScaleFactor: IVec2
-}
+import { Settings } from "../shared/settings"
+import Manager from "./manager"
+import { CaptureType } from "../shared/types"
 
 type SettingsOptional = {
   [key in keyof Settings]?: Settings[key]
 }
 
 
-class SettingHandler {
+export default class SettingsHandler {
 
   settings: Settings
-  SETTINGS_DIR = path.join(__dirname, "../../", "settings.json")
+  private SETTINGS_DIR = path.join(__dirname, "../../", "settings.json")
 
-  constructor() {
+  constructor(manager: Manager) {
     if (!fs.existsSync(this.SETTINGS_DIR)) {
-      this.settings = SettingHandler.defaultSettings()
+      this.settings = SettingsHandler.defaultSettings(manager)
       fs.writeFileSync(this.SETTINGS_DIR, JSON.stringify(this.settings))
     } else {
       this.settings = JSON.parse(fs.readFileSync(this.SETTINGS_DIR, "utf-8"))
     }
   }
 
-  static defaultSettings(): Settings {
+  private static defaultSettings(manager: Manager): Settings {
     return {
-      videoScaleFactor: {
-        x: 0,
-        y: 0
-      }
+      captureScaleFactor: undefined,
+      captureType: CaptureType.game,
+      videoEncoder: "jim_",
+      useMicrophone: true
     }
   }
 
@@ -39,7 +37,3 @@ class SettingHandler {
     fs.writeFileSync(this.SETTINGS_DIR, JSON.stringify(this.settings))
   }
 }
-
-const settings = new SettingHandler()
-
-export default settings

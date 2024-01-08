@@ -9,5 +9,18 @@ export type GameInfo<T> = {
   videoPath: string;
   thumbnailPath: string;
   game: string;
+  date: Date;
+  fileSize: number;
   gameData: T
+}
+
+export enum CaptureType {
+  game = "Game Capture",
+  monitor = "Monitor Capture"
+}
+
+
+export type GameCaptureSettings = {
+  window: string,
+  capture_cursor: boolean
 }
